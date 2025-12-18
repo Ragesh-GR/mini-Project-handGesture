@@ -1,4 +1,4 @@
-import cv2
+﻿import cv2
 import time
 import math
 import numpy as np
@@ -15,30 +15,59 @@ pTime = 0
 
 detector = htm.handDetector(maxHands=1, detectionCon=0.85, trackCon=0.8)
 
-# Volume control for Linux
-def get_volume():
-    """Get current system volume (0-100)"""
+# Volume control (cross-platform)
+import platform
+if platform.system() == 'Windows':
     try:
-        output = subprocess.check_output(['amixer', 'get', 'Master']).decode()
-        import re
-        match = re.search(r'\[(\d+)%\]', output)
-        if match:
-            return int(match.group(1))
-    except:
-        pass
-    return 50
-
-def set_volume(percent):
-    """Set system volume smoothly (0-100)"""
-    try:
-        percent = max(0, min(100, int(percent)))
-        subprocess.call(['amixer', '-D', 'pulse', 'sset', 'Master', f'{percent}%'], 
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return percent
-    except Exception as e:
-        print(f"Volume error: {e}")
-        return percent
-
+        from ctypes import POINTER, cast
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        def get_volume():
+            try:
+                devices = AudioUtilities.GetSpeakers()
+                interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                volume = cast(interface, POINTER(IAudioEndpointVolume))
+                level = volume.GetMasterVolumeLevelScalar()
+                return int(level * 100)
+            except:
+                return 50
+        def set_volume(percent):
+            try:
+                percent = max(0, min(100, int(percent)))
+                devices = AudioUtilities.GetSpeakers()
+                interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                volume = cast(interface, POINTER(IAudioEndpointVolume))
+                volume.SetMasterVolumeLevelScalar(percent/100.0, None)
+                return percent
+            except Exception as e:
+                print("Volume error: {0}".format(e))
+                return percent
+    except Exception:
+        def get_volume():
+            return 50
+        def set_volume(percent):
+            print('pycaw not available, cannot set volume on Windows')
+            return percent
+else:
+    # Linux amixer fallback
+    def get_volume():
+        try:
+            output = subprocess.check_output(['amixer', 'get', 'Master']).decode()
+            import re
+            match = re.search(r'\[(\d+)%\]', output)
+            if match:
+                return int(match.group(1))
+        except:
+            pass
+        return 50
+    def set_volume(percent):
+        try:
+            percent = max(0, min(100, int(percent)))
+            subprocess.call(['amixer', '-D', 'pulse', 'sset', 'Master', f'{percent}%'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return percent
+        except Exception as e:
+            print("Volume error: {0}".format(e))
+            return percent
 # Volume settings
 hmin = 50
 hmax = 200
@@ -87,19 +116,26 @@ def draw_instructions(img):
 
 
 print("=" * 50)
-print("Hand Gesture Control - Linux Version")
+print("Hand Gesture Control - Cross-platform")     
 print("=" * 50)
 print("\nGestures:")
-print("👊 Fist           -> Neutral Mode")
-print("☝️  Index finger   -> Scroll Up")
-print("✌️  2 Fingers      -> Scroll Down")
-print("🤏 Thumb + Index  -> Volume Control")
-print("✋ All 5 fingers  -> Cursor Control")
-print("   └─ Pinch       -> Click")
+print("ðŸ‘Š Fist           -> Neutral Mode")
+print("â˜ï¸  Index finger   -> Scroll Up")
+print("âœŒï¸  2 Fingers      -> Scroll Down")
+print("ðŸ¤ Thumb + Index  -> Volume Control")
+print("âœ‹ All 5 fingers  -> Cursor Control")
+print("   â””â”€ Pinch       -> Click")
 print("\nPress 'q' to quit")
 print("=" * 50)
+# Add a lightweight test runner: run N frames and exit when --test is passed
+import argparse
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument('--test', '-t', action='store_true', help='Run in test mode and exit after a few frames')
+parser.add_argument('--frames', '-n', type=int, default=60, help='Number of frames to process in test mode')
+args, _ = parser.parse_known_args()
 
 try:
+    frame_count = 0
     while True:
         success, img = cap.read()
         if not success:
@@ -279,6 +315,18 @@ try:
         draw_instructions(img)
 
         cv2.imshow('Hand Gesture Control', img)
+
+        # Increment frame count and optionally exit for test mode
+        frame_count += 1
+        if args.test and frame_count >= args.frames:
+            print(f"Test mode: processed {frame_count} frames, exiting")
+            break   
+
+        # Increment frame count and optionally exit for test mode
+        frame_count += 1
+        if args.test and frame_count >= args.frames:
+            print(f"Test mode: processed {frame_count} frames, exiting")
+            break
 
         # Proper exit handling
         key = cv2.waitKey(1) & 0xFF

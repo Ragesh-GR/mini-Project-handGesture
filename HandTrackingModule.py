@@ -2,6 +2,10 @@ import cv2
 import mediapipe as mp
 import time
 
+# Ensure expected mediapipe API is available (mp.solutions)
+if not hasattr(mp, 'solutions'):
+    raise ImportError("Your installed 'mediapipe' package does not expose 'mp.solutions'.\nPlease install a mediapipe wheel that provides the solutions API, for example on Windows use Python 3.11 and run:\n    python -m pip install mediapipe==0.10.31")
+
 
 class handDetector():
     def __init__(self, mode=False, maxHands=2, detectionCon=0.5, trackCon=0.5):
