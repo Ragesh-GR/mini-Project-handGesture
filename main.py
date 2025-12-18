@@ -40,11 +40,11 @@ def set_volume(percent):
         return percent
 
 # Volume settings
-hmin = 50
-hmax = 200
+hmin = 40
+hmax = 220
 volBar = 400
-volPer = get_volume()  # Get current volume
-prev_volPer = volPer
+volPer = get_volume()
+initial_volume = volPer
 color = (0, 215, 255)
 
 tipIds = [4, 8, 12, 16, 20]
@@ -53,14 +53,15 @@ active = 0
 
 pyautogui.FAILSAFE = False
 
-# Smooth cursor movement
+# IMPROVED: Faster cursor movement with adaptive smoothening
 plocX, plocY = 0, 0
 clocX, clocY = 0, 0
-smoothening = 5
+smoothening = 2.5  # Reduced from 5 for faster response (lower = faster)
 
-# Click control
-click_triggered = False
-click_cooldown = 0
+# Enhanced click control
+left_click_triggered = False
+right_click_triggered = False
+last_click_time = 0
 
 
 def putText(img, text, loc=(250, 450), color=(0, 255, 255), size=3):
@@ -77,27 +78,33 @@ def draw_instructions(img):
         "1 Finger: Scroll Up",
         "2 Fingers: Scroll Down", 
         "Thumb+Index: Volume",
+        "  Middle Finger: Exit",
         "All Fingers: Cursor",
-        "Pinch in Cursor: Click"
+        "  T+I Quick: Left Click",
+        "  T+I 2x: Double Click",
+        "  T+M: Right Click"
     ]
     y_pos = 80
     for i, text in enumerate(instructions):
-        cv2.putText(img, text, (10, y_pos + i*25), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(img, text, (10, y_pos + i*22), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1)
 
 
-print("=" * 50)
-print("Hand Gesture Control - Linux Version")
-print("=" * 50)
+print("=" * 60)
+print("Hand Gesture Control - Full Featured Version")
+print("=" * 60)
 print("\nGestures:")
 print("👊 Fist           -> Neutral Mode")
 print("☝️  Index finger   -> Scroll Up")
 print("✌️  2 Fingers      -> Scroll Down")
 print("🤏 Thumb + Index  -> Volume Control")
-print("✋ All 5 fingers  -> Cursor Control")
-print("   └─ Pinch       -> Click")
+print("   └─ Middle finger up -> Exit (volume stops)")
+print("✋ All 5 fingers  -> Cursor Control (FASTER!)")
+print("   ├─ Quick Pinch (T+I)    -> LEFT Click")
+print("   ├─ Double Pinch (T+I)   -> DOUBLE Click + Copy")
+print("   └─ Pinch (T+M)          -> RIGHT Click")
 print("\nPress 'q' to quit")
-print("=" * 50)
+print("=" * 60)
 
 try:
     while True:
@@ -135,10 +142,12 @@ try:
             elif fingers == [1, 1, 0, 0, 0] and active == 0:
                 mode = 'Volume'
                 active = 1
-                prev_volPer = get_volume()  # Get current system volume
+                initial_volume = get_volume()
+                volPer = initial_volume
             elif fingers == [1, 1, 1, 1, 1] and active == 0:
                 mode = 'Cursor'
                 active = 1
+                left_click_triggered = False
 
         ############# SCROLL MODE ##############
         if mode == 'Scroll':
@@ -165,10 +174,14 @@ try:
             putText(img, 'VOLUME', (250, 450))
             
             if len(lmList) != 0:
-                if fingers[-1] == 1:  # Pinky up to exit
+                # Exit condition: Middle finger raised
+                if fingers[2] == 1:
                     active = 0
                     mode = 'N'
-                else:
+                    print(f"Exiting volume mode. Final volume: {int(volPer)}%")
+                
+                # Check if ONLY thumb and index are up
+                elif fingers[0] == 1 and fingers[1] == 1 and fingers[2] == 0:
                     x1, y1 = lmList[4][1], lmList[4][2]
                     x2, y2 = lmList[8][1], lmList[8][2]
                     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
@@ -179,59 +192,67 @@ try:
                     cv2.circle(img, (cx, cy), 10, color, cv2.FILLED)
 
                     length = math.hypot(x2 - x1, y2 - y1)
+                    
+                    cv2.putText(img, f'Distance: {int(length)}', (350, 100), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-                    # Smooth volume changes - interpolate from 0-100
-                    target_vol = np.interp(length, [hmin, hmax], [0, 100])
+                    volPer = np.interp(length, [hmin, hmax], [0, 100])
+                    volPer = int(volPer)
+                    volPer = max(0, min(100, volPer))
                     
-                    # Smooth transition - only change if difference > 2%
-                    if abs(target_vol - prev_volPer) > 2:
-                        volPer = prev_volPer + (target_vol - prev_volPer) * 0.3
-                        volPer = max(0, min(100, volPer))
-                        set_volume(volPer)
-                        prev_volPer = volPer
-                    else:
-                        volPer = prev_volPer
-                    
+                    set_volume(volPer)
                     volBar = np.interp(volPer, [0, 100], [400, 150])
                     
-                    # Visual feedback
                     if length < 50:
                         cv2.circle(img, (cx, cy), 13, (0, 0, 255), cv2.FILLED)
+                        cv2.putText(img, 'MIN', (cx - 20, cy - 20), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                    elif length > 200:
+                        cv2.circle(img, (cx, cy), 13, (0, 255, 0), cv2.FILLED)
+                        cv2.putText(img, 'MAX', (cx - 20, cy - 20), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-                    # Volume bar
                     cv2.rectangle(img, (30, 150), (55, 400), (0, 255, 0), 3)
                     cv2.rectangle(img, (30, int(volBar)), (55, 400), (0, 255, 0), cv2.FILLED)
                     cv2.putText(img, f'{int(volPer)}%', (15, 430), 
                                cv2.FONT_HERSHEY_COMPLEX, 1, (0, 255, 0), 3)
+                    
+                    cv2.putText(img, 'Stretch: +  Close: -', (150, 100), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                    cv2.putText(img, 'Middle Finger Up: Exit', (140, 130), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+                
+                else:
+                    active = 0
+                    mode = 'N'
+                    print(f"Fingers changed. Exiting volume mode. Final volume: {int(volPer)}%")
 
-        ############# CURSOR MODE ##############
+        ############# CURSOR MODE - SIMPLIFIED WITHOUT DRAG ##############
         elif mode == 'Cursor':
             putText(img, 'CURSOR', (250, 450))
             
             # Draw control area
             cv2.rectangle(img, (110, 20), (530, 350), (255, 0, 255), 3)
-            cv2.putText(img, 'Move hand here', (200, 50), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
 
             if len(lmList) != 0:
-                if fingers[1:] == [0, 0, 0, 0]:  # Exit if only thumb up
+                if fingers[1:] == [0, 0, 0, 0]:  # Exit
                     active = 0
                     mode = 'N'
-                    click_triggered = False
+                    left_click_triggered = False
+                    right_click_triggered = False
                 else:
-                    # Index finger position for cursor
-                    x1, y1 = lmList[8][1], lmList[8][2]
-                    
-                    # Thumb position for click detection
+                    # Get finger positions
                     x_thumb, y_thumb = lmList[4][1], lmList[4][2]
+                    x_index, y_index = lmList[8][1], lmList[8][2]
+                    x_middle, y_middle = lmList[12][1], lmList[12][2]
                     
                     screen_w, screen_h = pyautogui.size()
                     
-                    # Map to screen
-                    X = np.interp(x1, [110, 530], [0, screen_w])
-                    Y = np.interp(y1, [20, 350], [0, screen_h])
+                    # IMPROVED: Faster cursor mapping with better range
+                    X = np.interp(x_index, [110, 530], [0, screen_w])
+                    Y = np.interp(y_index, [20, 350], [0, screen_h])
                     
-                    # Smooth movement
+                    # IMPROVED: Adaptive smoothening - less smooth = faster response
                     clocX = plocX + (X - plocX) / smoothening
                     clocY = plocY + (Y - plocY) / smoothening
                     
@@ -239,8 +260,9 @@ try:
                     clocY = max(0, min(clocY, screen_h - 1))
                     
                     # Visual indicators
-                    cv2.circle(img, (lmList[8][1], lmList[8][2]), 10, (255, 255, 0), cv2.FILLED)
                     cv2.circle(img, (x_thumb, y_thumb), 10, (0, 255, 0), cv2.FILLED)
+                    cv2.circle(img, (x_index, y_index), 10, (255, 255, 0), cv2.FILLED)
+                    cv2.circle(img, (x_middle, y_middle), 10, (255, 0, 255), cv2.FILLED)
                     
                     # Move cursor
                     try:
@@ -249,20 +271,62 @@ try:
                     except:
                         pass
                     
-                    # Click detection - measure distance between thumb and index
-                    distance = math.hypot(x1 - x_thumb, y1 - y_thumb)
+                    # Calculate distances
+                    dist_thumb_index = math.hypot(x_index - x_thumb, y_index - y_thumb)
+                    dist_thumb_middle = math.hypot(x_middle - x_thumb, y_middle - y_thumb)
                     
-                    # Click when pinched (distance < 40)
-                    if distance < 40:
-                        if not click_triggered:
-                            cv2.circle(img, (x_thumb, y_thumb), 15, (0, 0, 255), cv2.FILLED)
-                            cv2.putText(img, 'CLICK!', (200, 400), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
-                            pyautogui.click()
-                            click_triggered = True
+                    current_time = time.time()
+                    
+                    # ========== LEFT CLICK / DOUBLE CLICK ==========
+                    if dist_thumb_index < 40 and dist_thumb_middle > 45:
+                        if not left_click_triggered:
+                            # Check for double click
+                            if current_time - last_click_time < 0.5:
+                                # DOUBLE CLICK DETECTED
+                                cv2.circle(img, (x_thumb, y_thumb), 18, (255, 0, 255), cv2.FILLED)
+                                cv2.putText(img, 'DOUBLE CLICK!', (120, 400), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 255), 3)
+                                
+                                pyautogui.doubleClick()
+                                print("Double click - text selected and copied!")
+                                
+                                # Copy selected text
+                                time.sleep(0.1)
+                                pyautogui.hotkey('ctrl', 'c')
+                                
+                                time.sleep(0.5)
+                            else:
+                                # SINGLE CLICK
+                                cv2.circle(img, (x_thumb, y_thumb), 15, (0, 0, 255), cv2.FILLED)
+                                cv2.putText(img, 'CLICK!', (180, 400), 
+                                           cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
+                                pyautogui.click(button='left')
+                                print("Single click")
+                            
+                            last_click_time = current_time
+                            left_click_triggered = True
+                            time.sleep(0.2)
+                    else:
+                        left_click_triggered = False
+                    
+                    # ========== RIGHT CLICK ==========
+                    if dist_thumb_middle < 40 and dist_thumb_index > 45:
+                        if not right_click_triggered:
+                            cv2.circle(img, (x_thumb, y_thumb), 15, (255, 0, 0), cv2.FILLED)
+                            cv2.line(img, (x_thumb, y_thumb), (x_middle, y_middle), (255, 0, 0), 3)
+                            cv2.putText(img, 'RIGHT CLICK!', (130, 400), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 3)
+                            
+                            pyautogui.click(button='right')
+                            right_click_triggered = True
+                            print("Right click")
                             time.sleep(0.3)
                     else:
-                        click_triggered = False
+                        right_click_triggered = False
+                    
+                    # Display distances
+                    cv2.putText(img, f'TI:{int(dist_thumb_index)} TM:{int(dist_thumb_middle)}', 
+                               (10, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
 
         # Display mode and FPS
         cv2.rectangle(img, (0, 0), (200, 60), (50, 50, 50), cv2.FILLED)
@@ -275,17 +339,13 @@ try:
         cv2.putText(img, f'FPS: {int(fps)}', (450, 40), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
-        # Draw instructions
         draw_instructions(img)
-
         cv2.imshow('Hand Gesture Control', img)
 
-        # Proper exit handling
         key = cv2.waitKey(1) & 0xFF
-        if key == ord('q') or key == 27:  # 'q' or ESC
+        if key == ord('q') or key == 27:
             break
         
-        # Check if window was closed
         if cv2.getWindowProperty('Hand Gesture Control', cv2.WND_PROP_VISIBLE) < 1:
             break
 
@@ -294,9 +354,8 @@ except KeyboardInterrupt:
 except Exception as e:
     print(f"\nError occurred: {e}")
 finally:
-    # Cleanup
     print("\nCleaning up...")
     cap.release()
     cv2.destroyAllWindows()
-    cv2.waitKey(1)  # Extra wait to ensure window closes
+    cv2.waitKey(1)
     print("Exited successfully!")
