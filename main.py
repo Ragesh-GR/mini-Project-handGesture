@@ -140,6 +140,24 @@ parser.add_argument('--test', '-t', action='store_true', help='Run in test mode 
 parser.add_argument('--frames', '-n', type=int, default=60, help='Number of frames to process in test mode')
 args, _ = parser.parse_known_args()
 
+# Reparse optional recording flags (keeps backward compatibility)
+import argparse as _ap
+_reparser = _ap.ArgumentParser(add_help=False)
+_reparser.add_argument('--save', action='store_true')
+_reparser.add_argument('--out', default='run_recording.mp4')
+_reargs, _ = _reparser.parse_known_args()
+# Ensure args exists (original parser may not have created it in some flows)
+if 'args' not in globals() and 'args' not in locals():
+    args = _reargs
+else:
+    if getattr(_reargs, 'save', False):
+        setattr(args, 'save', True)
+        setattr(args, 'out', _reargs.out)
+
+# Video writer placeholder
+writer = None
+out_filename = getattr(args, 'out', 'run_recording.mp4')
+
 try:
     frame_count = 0
     while True:
@@ -322,6 +340,16 @@ try:
 
         cv2.imshow('Hand Gesture Control', img)
 
+        # Optional recording
+        if getattr(args, 'save', False):
+            if writer is None:
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                writer = cv2.VideoWriter(out_filename, fourcc, 20.0, (wCam, hCam))
+            try:
+                writer.write(img)
+            except Exception as e:
+                print(f"Warning: failed to write frame to {out_filename}: {e}")
+
         # Increment frame count and optionally exit for test mode
         frame_count += 1
         if args.test and frame_count >= args.frames:
@@ -350,6 +378,11 @@ except Exception as e:
 finally:
     # Cleanup
     print("\nCleaning up...")
+    if writer is not None:
+        try:
+            writer.release()
+        except Exception:
+            pass
     cap.release()
     cv2.destroyAllWindows()
     cv2.waitKey(1)  # Extra wait to ensure window closes
