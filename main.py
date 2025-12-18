@@ -5,6 +5,12 @@ import numpy as np
 import HandTrackingModule as htm
 import pyautogui
 import subprocess
+import sys
+# Ensure console prints Unicode characters properly (Windows)
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 # Configuration
 wCam, hCam = 640, 480
